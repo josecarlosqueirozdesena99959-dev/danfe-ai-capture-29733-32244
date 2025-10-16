@@ -41,6 +41,18 @@ const Index = () => {
     setGeneratedCode(null);
   };
 
+  const handleNewNote = () => {
+    setSelectedImage(null);
+    setExtractedData(null);
+    setGeneratedCode(null);
+    setIsProcessing(false);
+    setIsDownloading(false);
+    toast({
+      title: "Pronto!",
+      description: "Você pode processar uma nova nota fiscal.",
+    });
+  };
+
   const convertImageToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -323,10 +335,20 @@ const Index = () => {
                   </div>
                   <h2 className="text-xl font-semibold">Dados Extraídos</h2>
                 </div>
-                <CopyButton 
-                  text={extractedData.chave} 
-                  label="Copiar Chave"
-                />
+                <div className="flex gap-2">
+                  <CopyButton 
+                    text={extractedData.chave} 
+                    label="Copiar Chave"
+                  />
+                  <Button 
+                    onClick={handleNewNote}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Nova Nota
+                  </Button>
+                </div>
               </div>
               
               <ExtractedDataDisplay data={extractedData} />
