@@ -14,13 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      danfe_extractions: {
+        Row: {
+          access_code: string
+          chave: string
+          created_at: string
+          data_emissao: string | null
+          empresa: string | null
+          expires_at: string
+          id: string
+          image_data: string | null
+          numero: string | null
+          valor_total: string | null
+        }
+        Insert: {
+          access_code: string
+          chave: string
+          created_at?: string
+          data_emissao?: string | null
+          empresa?: string | null
+          expires_at?: string
+          id?: string
+          image_data?: string | null
+          numero?: string | null
+          valor_total?: string | null
+        }
+        Update: {
+          access_code?: string
+          chave?: string
+          created_at?: string
+          data_emissao?: string | null
+          empresa?: string | null
+          expires_at?: string
+          id?: string
+          image_data?: string | null
+          numero?: string | null
+          valor_total?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_expired_extractions: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

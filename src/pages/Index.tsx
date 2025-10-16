@@ -2,11 +2,15 @@ import { useState } from 'react';
 import { ImageUpload } from '@/components/ImageUpload';
 import { ExtractedDataDisplay } from '@/components/ExtractedDataDisplay';
 import { CopyButton } from '@/components/CopyButton';
+import { CodeInput } from '@/components/CodeInput';
+import { CodeDisplay } from '@/components/CodeDisplay';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { FileText, Sparkles, Key, Download } from 'lucide-react';
+import { FileText, Sparkles, Key, Download, Smartphone, Monitor } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useDeviceType } from '@/hooks/useDeviceType';
+import { generateAccessCode } from '@/utils/codeGenerator';
 
 interface ExtractedData {
   chave: string;
@@ -21,7 +25,10 @@ const Index = () => {
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [isLoadingCode, setIsLoadingCode] = useState(false);
   const { toast } = useToast();
+  const deviceType = useDeviceType();
 
   const handleImageSelect = (file: File) => {
     setSelectedImage(file);
@@ -31,6 +38,7 @@ const Index = () => {
   const handleClear = () => {
     setSelectedImage(null);
     setExtractedData(null);
+    setGeneratedCode(null);
   };
 
   const convertImageToBase64 = (file: File): Promise<string> => {
@@ -68,10 +76,39 @@ const Index = () => {
 
       setExtractedData(data.data);
       
-      toast({
-        title: "Sucesso!",
-        description: "Dados da DANFE extraídos com sucesso.",
-      });
+      // If on mobile, save to database with code
+      if (deviceType === 'mobile') {
+        const code = generateAccessCode();
+        const imageBase64String = imageBase64.split(',')[1] || imageBase64;
+        
+        const { error: insertError } = await supabase
+          .from('danfe_extractions')
+          .insert({
+            access_code: code,
+            chave: data.data.chave,
+            empresa: data.data.empresa,
+            numero: data.data.numero,
+            data_emissao: data.data.dataEmissao,
+            valor_total: data.data.valorTotal,
+            image_data: imageBase64String
+          });
+
+        if (insertError) {
+          console.error('Error saving to database:', insertError);
+          throw new Error('Erro ao salvar dados no banco');
+        }
+
+        setGeneratedCode(code);
+        toast({
+          title: "Sucesso!",
+          description: `Dados salvos! Código: ${code}`,
+        });
+      } else {
+        toast({
+          title: "Sucesso!",
+          description: "Dados da DANFE extraídos com sucesso.",
+        });
+      }
     } catch (error) {
       console.error('Error processing image:', error);
       toast({
@@ -81,6 +118,49 @@ const Index = () => {
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleCodeSubmit = async (code: string) => {
+    setIsLoadingCode(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('danfe_extractions')
+        .select('*')
+        .eq('access_code', code)
+        .single();
+
+      if (error || !data) {
+        throw new Error('Código não encontrado ou expirado');
+      }
+
+      // Check if expired
+      if (new Date(data.expires_at) < new Date()) {
+        throw new Error('Este código expirou');
+      }
+
+      setExtractedData({
+        chave: data.chave,
+        empresa: data.empresa || 'Não identificado',
+        numero: data.numero || 'Não identificado',
+        dataEmissao: data.data_emissao || 'Não identificado',
+        valorTotal: data.valor_total || 'Não identificado'
+      });
+
+      toast({
+        title: "Sucesso!",
+        description: "Dados carregados com sucesso.",
+      });
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Código inválido ou expirado.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingCode(false);
     }
   };
 
@@ -165,10 +245,32 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12">
+      <main className="container mx-auto px-4 py-6 md:py-12">
         <div className="max-w-4xl mx-auto space-y-8">
-          {/* Upload Section */}
-          <div className="space-y-4">
+          
+          {/* Device Type Indicator */}
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            {deviceType === 'mobile' ? (
+              <>
+                <Smartphone className="h-4 w-4" />
+                <span>Modo Mobile - Tire foto e receba o código</span>
+              </>
+            ) : (
+              <>
+                <Monitor className="h-4 w-4" />
+                <span>Modo Desktop - Digite o código para acessar</span>
+              </>
+            )}
+          </div>
+
+          {/* Desktop: Code Input Section */}
+          {deviceType === 'desktop' && !extractedData && (
+            <CodeInput onCodeSubmit={handleCodeSubmit} isLoading={isLoadingCode} />
+          )}
+
+          {/* Mobile: Upload Section */}
+          {deviceType === 'mobile' && !generatedCode && (
+            <div className="space-y-4">
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">
                 1
@@ -190,7 +292,13 @@ const Index = () => {
                 Processar com IA
               </Button>
             )}
-          </div>
+            </div>
+          )}
+
+          {/* Mobile: Code Display After Processing */}
+          {deviceType === 'mobile' && generatedCode && (
+            <CodeDisplay code={generatedCode} />
+          )}
 
           {/* Processing State */}
           {isProcessing && (
@@ -250,8 +358,8 @@ const Index = () => {
             </div>
           )}
 
-          {/* Empty State */}
-          {!selectedImage && !isProcessing && !extractedData && (
+          {/* Empty State - Only on Mobile */}
+          {deviceType === 'mobile' && !selectedImage && !isProcessing && !extractedData && !generatedCode && (
             <Card className="p-8 text-center border-dashed border-2">
               <div className="flex flex-col items-center gap-4">
                 <div className="p-6 rounded-full bg-muted">
@@ -268,18 +376,28 @@ const Index = () => {
           )}
 
           {/* Info Card */}
-          <div className="mt-12 p-6 bg-card/50 backdrop-blur-sm rounded-lg border">
+          <div className="mt-12 p-4 md:p-6 bg-card/50 backdrop-blur-sm rounded-lg border">
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
               Como funciona
             </h3>
-            <ol className="space-y-2 text-sm text-muted-foreground">
-              <li>1. Tire uma foto da DANFE ou selecione uma imagem do seu dispositivo</li>
-              <li>2. Clique em "Processar com IA" para extrair automaticamente a chave de acesso</li>
-              <li>3. Baixe o PDF da DANFE diretamente usando a chave extraída</li>
-            </ol>
+            {deviceType === 'mobile' ? (
+              <ol className="space-y-2 text-sm text-muted-foreground">
+                <li>1. Tire uma foto da DANFE com seu celular</li>
+                <li>2. Clique em "Processar com IA" para extrair os dados</li>
+                <li>3. Receba um código de 6 dígitos válido por 24 horas</li>
+                <li>4. Use o código no computador para acessar os dados e baixar o PDF</li>
+              </ol>
+            ) : (
+              <ol className="space-y-2 text-sm text-muted-foreground">
+                <li>1. Receba o código de 6 dígitos do celular</li>
+                <li>2. Digite o código acima para acessar os dados</li>
+                <li>3. Visualize as informações extraídas da DANFE</li>
+                <li>4. Baixe o PDF da DANFE diretamente</li>
+              </ol>
+            )}
             <p className="text-xs text-muted-foreground mt-4">
-              <strong>Nota:</strong> Este sistema usa IA avançada do Gemini para extrair dados automaticamente.
+              <strong>Nota:</strong> Sistema com IA para sincronização entre dispositivos. Códigos válidos por 24 horas.
             </p>
           </div>
         </div>
